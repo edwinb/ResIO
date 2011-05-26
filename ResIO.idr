@@ -147,6 +147,13 @@ data ResProg : Set -> Set where
    RP : {xs':Vect ResTy n} -> 
         ResIO a (O,clear n) (t,xs') -> ResProg a;
 
+data VerProg : (n:Nat) -> (Vect ResTy n -> Set) -> Set -> Set where
+   VP : {xs':Vect ResTy n} -> 
+        {P:Vect ResTy n -> Set} ->
+        ResIO a (O, clear n) (t, xs') ->
+        P xs' ->
+        VerProg n P a;
+
 clearEnv : (n:Nat) -> ResEnv (clear n);
 clearEnv O = Empty;
 clearEnv (S k) = Extend II (clearEnv k);
@@ -154,6 +161,10 @@ clearEnv (S k) = Extend II (clearEnv k);
 run : ResProg a -> IO a;
 run (RP {n} (ResIOp f)) = do { cenv' <- f (clearEnv n);
                                return (fst cenv'); };
+
+vrun : {P:Vect ResTy n -> Set} -> VerProg n P a -> IO a;
+vrun {n} (VP (ResIOp f) p) = do { cenv' <- f (clearEnv n);
+                                  return (fst cenv'); };
 
 resources = intToNat;
 

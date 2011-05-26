@@ -64,19 +64,23 @@ do using (BIND, RETURN) {
   readFile : ResSub (FILE (Open Reading)) String;
   readFile h = CALL (readFile' "") h;
 
-  test : ResProg ();
-  test = RP {n=resources 1}
-         do { open "Test" Reading fO;
-              h <- GET fO;
-              CHECK h (LIFT (putStrLn "File open error"))
-                      (do { h <- GET fO;
-                            content <- CALL readFile h;
-                            LIFT (putStrLn content);
-                            close h; 
-                            return II;
-                          });
-            };
+  data AllClosed : Vect ResTy n -> Set where
+     ClosedNil  : AllClosed VNil
+   | ClosedMore : {xs:Vect ResTy n} ->
+                  AllClosed xs -> AllClosed (RTy (FILE Closed) :: xs);
+
+  test : VerProg (resources 1) AllClosed ();
+  test = VP do { open "Test" Reading fO;
+                 h <- GET fO;
+                 CHECK h (LIFT (putStrLn "File open error"))
+                         (do { h <- GET fO;
+                               content <- CALL readFile h;
+                               LIFT (putStrLn content);
+                               close h; 
+                               return II;
+                             });
+               } (ClosedMore ClosedNil);
 
 }
 
-main = run test;
+main = vrun test;
