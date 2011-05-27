@@ -65,108 +65,127 @@ getResAction {n} {s} {s'} (ResIOp f) = f;
 
 using (s:ResState n, s':ResState n) {
 
-BIND : ResIO t s s' -> (t -> ResIO u s' s'') -> ResIO u s s'';
-BIND {n} {t} {s} {s'} (ResIOp c) k = 
-     ResIOp (\env => do { cenv' <- c env;
-                          getResAction (k (fst cenv')) (snd cenv');
-                                    });
+  {-- BIND and RETURN so that we can use do-notation --}
 
-RETURN : a -> ResIO a s s;
-RETURN x = ResIOp (\env => return (x, env));
+  BIND : ResIO t s s' -> (t -> ResIO u s' s'') -> ResIO u s s'';
+  BIND {n} {t} {s} {s'} (ResIOp c) k = 
+       ResIOp (\env => do { cenv' <- c env;
+                            getResAction (k (fst cenv')) (snd cenv');
+                                      });
 
-GET : (i:Fin n) -> ResIO (Resource (fst s) i (vlookup i (snd s))) s s;
-GET i = ResIOp (\env => return (Res (envLookup i env), env));
+  RETURN : a -> ResIO a s s;
+  RETURN x = ResIOp (\env => return (x, env));
 
-PUT : {i:Fin n} -> 
-      Resource (fst s) i (RTy a) -> 
-      rty b ->
-      ResIO () s (Later' s i b);
-PUT {i} res val = ResIOp (\env => return (II, updateEnv env i val));
+  {-- Get a value from a resource, marked as valid at the current time slot --}
 
-CREATE : (i:Fin n) -> 
-         |(action:IOr (rty a)) ->
+  GET : (i:Fin n) -> ResIO (Resource (fst s) i (vlookup i (snd s))) s s;
+  GET i = ResIOp (\env => return (Res (envLookup i env), env));
+
+  {-- Put a new value in a resource and move to the next time slot --}
+
+  PUT : {i:Fin n} -> 
+        Resource (fst s) i (RTy a) -> 
+        rty b ->
+        ResIO () s (Later' s i b);
+  PUT {i} res val = ResIOp (\env => return (II, updateEnv env i val));
+
+  {-- Make a new resource from an IO action --}
+
+  CREATE : (i:Fin n) -> 
+           |(action:IOr (rty a)) ->
          ResIO (rty a) s (Later' s i a);
-CREATE i ival
-    = ResIOp (\env => do { val <- getIOr ival;
-                           return (val, updateEnv env i val); });
+  CREATE i ival
+      = ResIOp (\env => do { val <- getIOr ival;
+                             return (val, updateEnv env i val); });
 
-UPDATE : {i:Fin n} -> 
-         |(action:IOr (rty a)) ->
-         Resource (fst s) i b -> 
-         ResIO (rty a) s (Later' s i a);
-UPDATE {i} ival res
-    = ResIOp (\env => do { val <- getIOr ival;
-                           return (val, updateEnv env i val); });
+  {-- Replace the contents of a resource --}
 
-USE : {i:Fin n} -> 
-      (rty a -> IOr b) ->
-      Resource (fst s) i a -> 
-      ResIO b s s;
-USE {i} f res = ResIOp (\env => do { v <- getIOr (f (getResource res));
-                                     return (v, env); });
+  UPDATE : {i:Fin n} -> 
+           |(action:IOr (rty a)) ->
+           Resource (fst s) i b -> 
+           ResIO (rty a) s (Later' s i a);
+  UPDATE {i} ival res
+      = ResIOp (\env => do { val <- getIOr ival;
+                             return (val, updateEnv env i val); });
 
-SET_TIMER : (time:Nat) -> ResIO b s t -> ResIO b s (time, snd t);
-SET_TIMER {t} time (ResIOp {s'=t} prog) = ResIOp {s'=(time, snd t)} prog;
+  {-- Apply a function to the value in a resource --}
 
-do using (BIND, RETURN) {
+  USE : {i:Fin n} -> 
+        (rty a -> IOr b) ->
+        Resource (fst s) i a -> 
+        ResIO b s s;
+  USE {i} f res = ResIOp (\env => do { v <- getIOr (f (getResource res));
+                                       return (v, env); });
 
-CHECK : {i:Fin n} -> {xs':Vect ResTy n} ->
-        Resource (fst s) i (RTy (Either a b)) ->
-        ResIO c (Later' s i (RTy a)) (t1, xs') ->
-        ResIO c (Later' s i (RTy b)) (t2, xs') ->
-        ResIO c s (max t1 t2, xs');
-CHECK {n} {i} {t1} {t2} res left right =
-   either (getResource res)
-       (\lv => SET_TIMER (max t1 t2) do { PUT res lv; left; })
-       (\rv => SET_TIMER (max t1 t2) do { PUT res rv; right; });
+  {-- Lift an IO computation into ResIO --}
 
-}
+  LIFT : |(action:IO a) -> ResIO a s s;
+  LIFT action = ResIOp (\env => do { v <- action; return (v, env); });
 
-LIFT : |(action:IO a) -> ResIO a s s;
-LIFT action = ResIOp (\env => do { v <- action; return (v, env); });
+  do using (BIND, RETURN) {
 
-syntax ResSub t u = #(Resource O (fO {k=O}) (RTy t) ->
-                      ResIO u (O, RTy t :: VNil) (O, RTy t :: VNil));
+    {-- If we're branching, and each branch could do different amounts of
+        resource mangling, we'll reset the clock at the end to the larger --}
+    SET_TIMER : (time:Nat) -> ResIO b s t -> ResIO b s (time, snd t);
+    SET_TIMER {t} time (ResIOp {s'=t} prog) = ResIOp {s'=(time, snd t)} prog;
 
-syntax MK_USE x y = #({n:Nat} -> {s:ResState n} -> {i:Fin n} -> 
-                      Resource (fst s) i (RTy x) -> ResIO y s s);
+    CHECK : {i:Fin n} -> {xs':Vect ResTy n} ->
+            Resource (fst s) i (RTy (Either a b)) ->
+            ResIO c (Later' s i (RTy a)) (t1, xs') ->
+            ResIO c (Later' s i (RTy b)) (t2, xs') ->
+            ResIO c s (max t1 t2, xs');
+    CHECK {n} {i} {t1} {t2} res left right =
+       either (getResource res)
+           (\lv => SET_TIMER (max t1 t2) do { PUT res lv; left; })
+           (\rv => SET_TIMER (max t1 t2) do { PUT res rv; right; });
+  
+  }
 
-syntax MK_CREATE y = #({n:Nat} -> {s:ResState n} -> 
-                       (i:Fin n) -> ResIO y s (Later' s i (RTy y)));
+  {-- Some handy syntactic definitions so we don't need to write resource
+      types in full all the time. --}
 
-syntax MK_UPDATE x y = #({n:Nat} -> {s:ResState n} -> {i:Fin n} -> 
-                         Resource (fst s) i (RTy x) ->
-                         ResIO y s (Later' s i (RTy y)));
+  syntax ResSub t u = #(Resource O (fO {k=O}) (RTy t) ->
+                        ResIO u (O, RTy t :: VNil) (O, RTy t :: VNil));
 
--- an initial empty vector of n resources
-clear : (n:Nat) -> Vect ResTy n;
-clear O = VNil;
-clear (S k) = RTy () :: clear k;
+  syntax MK_USE x y = #({n:Nat} -> {s:ResState n} -> {i:Fin n} -> 
+                        Resource (fst s) i (RTy x) -> ResIO y s s);
 
-data ResProg : Set -> Set where
-   RP : {xs':Vect ResTy n} -> 
-        ResIO a (O,clear n) (t,xs') -> ResProg a;
+  syntax MK_CREATE y = #({n:Nat} -> {s:ResState n} -> 
+                         (i:Fin n) -> ResIO y s (Later' s i (RTy y)));
 
-data VerProg : (n:Nat) -> (Vect ResTy n -> Set) -> Set -> Set where
-   VP : {xs':Vect ResTy n} -> 
-        {P:Vect ResTy n -> Set} ->
-        ResIO a (O, clear n) (t, xs') ->
-        P xs' ->
-        VerProg n P a;
+  syntax MK_UPDATE x y = #({n:Nat} -> {s:ResState n} -> {i:Fin n} -> 
+                           Resource (fst s) i (RTy x) ->
+                           ResIO y s (Later' s i (RTy y)));
 
-clearEnv : (n:Nat) -> ResEnv (clear n);
-clearEnv O = Empty;
-clearEnv (S k) = Extend II (clearEnv k);
+  -- an initial empty vector of n resources
+  clear : (n:Nat) -> Vect ResTy n;
+  clear O = VNil;
+  clear (S k) = RTy () :: clear k;
 
-run : ResProg a -> IO a;
-run (RP {n} (ResIOp f)) = do { cenv' <- f (clearEnv n);
-                               return (fst cenv'); };
+  data ResProg : Set -> Set where
+     RP : {xs':Vect ResTy n} -> 
+          ResIO a (O,clear n) (t,xs') -> ResProg a;
 
-vrun : {P:Vect ResTy n -> Set} -> VerProg n P a -> IO a;
-vrun {n} (VP (ResIOp f) p) = do { cenv' <- f (clearEnv n);
-                                  return (fst cenv'); };
+  data VerProg : (n:Nat) -> (Vect ResTy n -> Set) -> Set -> Set where
+     VP : {xs':Vect ResTy n} -> 
+          {P:Vect ResTy n -> Set} ->
+          ResIO a (O, clear n) (t, xs') ->
+          P xs' ->
+          VerProg n P a;
 
-resources = intToNat;
+  clearEnv : (n:Nat) -> ResEnv (clear n);
+  clearEnv O = Empty;
+  clearEnv (S k) = Extend II (clearEnv k);
+
+  run : ResProg a -> IO a;
+  run (RP {n} (ResIOp f)) = do { cenv' <- f (clearEnv n);
+                                 return (fst cenv'); };
+
+  vrun : {P:Vect ResTy n -> Set} -> VerProg n P a -> IO a;
+  vrun {n} (VP (ResIOp f) p) = do { cenv' <- f (clearEnv n);
+                                    return (fst cenv'); };
+
+  resources = intToNat;
 
 }
 
@@ -190,5 +209,9 @@ CALL {n} {t} {u} {s} {i} p res =
      ResIOp (\env => do { v <- call_action pval rval;
                           return (fst v, env); });
 
-%hide MkIOr;
+-- We don't want to export things that are used internally - a programmer 
+-- could use these to subvert resource correctness...
 
+%hide MkIOr;
+%hide getIOr;
+%hide SET_TIMER;

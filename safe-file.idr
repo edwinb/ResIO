@@ -72,7 +72,7 @@ eof r = USE eof_r r;                           %hide feof;
 do using (BIND, RETURN) {
 
   {-- Reading a file involves reading lines until we get to the end.
-      A ResSub is a subroutine which uses a resource but musn't change the
+      A ResSub is a subroutine which uses a resource but mustn't change the
       resource state. Handy if, say, we have a resource we want to use a lot,
       like a file handle being passed around. 
 
