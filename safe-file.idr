@@ -10,6 +10,17 @@ data FILE : FState -> Set where
 
 data FileError = OpenFailed;
 
+{-- Primitive operations. Defined as ordinary IO functions, then lifted into
+    IOr.
+
+    Living in IOr means they can only be called from
+    a ResIO program, so we can guarantee that old resources (e.g. file handles
+    that are no longer valid because they've been closed) are not accessible.
+
+    Mostly the types just describe the state transitions of the resource in
+    question. open_r is a bit trickier, because opening a file might fail.
+--}
+
 open_r      : String -> (p:Purpose) -> 
               IOr (Either (FILE Closed) (FILE (Open p)));
 close_r     : FILE (Open p) -> IOr (FILE Closed);
@@ -33,6 +44,13 @@ eof_r           (OpenH f) = ior (feof f);
 %hide OpenH;
 %hide ClosedH;
 
+{-- Convert the primitive operations to ResIO operations. The type says 
+    exactly what happens to the resource each function operates on, i.e.
+    it's creating or updating a resource (which invalidates old resources)
+    or it's just accessing a resource (which doesn't invalidate anything).
+
+--}
+
 open : String -> (p:Purpose) -> 
        MK_CREATE (Either (FILE Closed) (FILE (Open p)));
 open fname p i = CREATE i (open_r fname p);    %hide fopen;
@@ -53,6 +71,15 @@ eof r = USE eof_r r;                           %hide feof;
 
 do using (BIND, RETURN) {
 
+  {-- Reading a file involves reading lines until we get to the end.
+      A ResSub is a subroutine which uses a resource but musn't change the
+      resource state. Handy if, say, we have a resource we want to use a lot,
+      like a file handle being passed around. 
+
+      (Might be useful to make this more generic, if we want to pass around
+      multiple resources/)
+  --}
+
   readFile' : String -> ResSub (FILE (Open Reading)) String;
   readFile' acc h 
      = do { end <- eof h;
@@ -68,6 +95,9 @@ do using (BIND, RETURN) {
      ClosedNil  : AllClosed VNil
    | ClosedMore : {xs:Vect ResTy n} ->
                   AllClosed xs -> AllClosed (RTy (FILE Closed) :: xs);
+
+  {-- A valid File program is a ResIO program paired with a proof that all
+      the files it has used are closed at the end. --}
 
   test : VerProg (resources 1) AllClosed ();
   test = VP do { open "Test" Reading fO;
