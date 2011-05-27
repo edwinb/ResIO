@@ -55,6 +55,14 @@ Later s = (S (fst s), snd s);
 Later' : ResState n -> (i:Fin n) -> ResTy -> ResState n;
 Later' s i a = (S (fst s), update i a (snd s));
 
+{-- A ResIO computation is parameterised over the start and end time slots,
+    and the start and end resource states. This way, we can tell statically
+    at what time slot a computation takes place, and ensure that resources
+    are only accessed at a time when they are still valid. We can also state
+    properties about the initial and final resource states (e.g. guaranteeing
+    that all resources are cleaned up after use)
+--}
+
 data ResIO : Set -> ResState n -> ResState n -> Set where
   ResIOp : {s:ResState n} -> {s':ResState n} ->
            (ResEnv (snd s) -> IO (a & ResEnv (snd s'))) -> ResIO a s s';
