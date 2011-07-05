@@ -106,16 +106,25 @@ print str = App (Prim [TyVal String] putStrLn) str;
 
 dsl (V, Lam) {
   do using (Bind, I) {
-
     prog : RIO ();
-    prog = do { h <- lopen (I "Test") (I "r");
+    prog = do
+              { h <- lopen (I "Test") (I "r");
                 str <- lread h;
                 print str;
                 lclose h;
               };
-
   }
-} 
+}
+
+syntax rio x = dsl(Bind, I, V, Lam) x;
+
+prog2 : RIO ();
+prog2 = rio do
+          { h <- lopen (I "Test") (I "r");
+            str <- lread h;
+            print str;
+            lclose h;
+          };
 
 main = run prog;
 
