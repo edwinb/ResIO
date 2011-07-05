@@ -116,7 +116,12 @@ dsl (V, Lam) {
   }
 }
 
-syntax rio x = dsl(Bind, I, V, Lam) x;
+dsl rio {
+   bind = Bind 
+   return = I 
+   variable = V 
+   lambda = Lam
+}
 
 prog2 : RIO ();
 prog2 = rio do
