@@ -1,8 +1,4 @@
-{-- Whether a variable must be used or not.
-    Only primitives are allowed to say a variable is unused in its scope
-    (e.g. reading from a file handle. --}
-
-data IsUsed = Used | Unused;
+{-- A language (unfinished) for describing linear operations --}
 
 infixr 5 :->;
 

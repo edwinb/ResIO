@@ -9,7 +9,7 @@ data SocketType = Stream | Datagram;
 data Family     = UNIX   | INET;
 data RW         = Read   | Write;
 
-data SockAddr   = HostPort String Int | Port Int; 
+data SockAddr   = HostPort String Int | Port Int;
 
 _prim_socket  : Family -> SocketType -> IO SockID;
 _prim_connect : SockID -> SockAddr -> IO Int;
