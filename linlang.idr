@@ -104,18 +104,6 @@ lclose h = App lclose' h;
 print : RArg (TyVal String) -> RIO ();
 print str = App (Prim [TyVal String] putStrLn) str;
 
-dsl (V, Lam) {
-  do using (Bind, I) {
-    prog : RIO ();
-    prog = do
-              { h <- lopen (I "Test") (I "r");
-                str <- lread h;
-                print str;
-                lclose h;
-              };
-  }
-}
-
 dsl rio {
    bind = Bind 
    return = I 
@@ -123,8 +111,8 @@ dsl rio {
    lambda = Lam
 }
 
-prog2 : RIO ();
-prog2 = rio do
+prog : RIO ();
+prog = rio do
           { h <- lopen (I "Test") (I "r");
             str <- lread h;
             print str;
