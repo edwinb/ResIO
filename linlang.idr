@@ -44,13 +44,12 @@ using (gam : Vect LTy n) {
       V    : (i:Fin n) -> Res gam (vlookup i gam)
     | I    : a -> Res gam (TyVal a)
     | Lam  : Res (A :: gam) T -> Res gam (A :-> T)
-    | Bind : Res gam (TyIO A) -> Res gam (A :-> (TyIO T)) -> Res gam (TyIO T)
+    | Bind : Res gam (TyIO A) -> Res gam (A :-> TyIO T) -> Res gam (TyIO T)
     | App  : Res gam (A :-> T) -> Res gam A -> Res gam T
     | Read : Res gam (TyRes A) -> Res gam (TyReadRes A)
     | Prim : (argTys : List LTy) ->
              (interpTy (mkTyFun argTys T)) ->
              Res gam (mkTyFun argTys T);
-
 
   data Env : Vect LTy n -> Set where
      Empty : Env VNil
@@ -114,6 +113,8 @@ dsl rio {
 prog : RIO ();
 prog = rio do
           { h <- lopen (I "Test") (I "r");
+            str <- lread h;
+            print str;
             str <- lread h;
             print str;
             lclose h;
