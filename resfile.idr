@@ -27,10 +27,13 @@ testprog : String -> RES ();
 testprog filename 
     = res do { let h = open filename Reading;
                Check h
-                 (Lift (lazy (putStrLn "File open error")))
-                 (do { str <- Use readLine h;
-                       Lift (putStrLn str);
+                 (Lift (putStrLn "File open error"))
+                 (do { While (do { end <- Use eof h;
+                                   return (not end); })
+                             (do { str <- Use readLine h;
+                                   Lift (putStrLn str); });
                        Update close h; 
+                       Lift (putStrLn "DONE");
                      }); 
              };
 
