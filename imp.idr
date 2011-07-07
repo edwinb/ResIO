@@ -1,34 +1,36 @@
-
-update : (i:Fin n) -> a -> Vect a n -> Vect a n;
-update fO     y (x :: xs) = y :: xs;
-update (fS k) y (x :: xs) = x :: update k y xs;
-
 using (gam : Vect Set n, gam' : Vect Set n, gam'' : Vect Set n) {
 
   infixl 5 := ;
 
+  data HasType : Vect Set n -> Fin n -> Set -> Set where
+       stop : HasType (a :: gam) fO a
+     | pop  : HasType gam i b -> HasType (a :: gam) (fS i) b;
+
+  update : (gam : Vect Set n) -> HasType gam i b -> Set -> Vect Set n;
+  update (x :: xs) stop    y = y :: xs;
+  update (x :: xs) (pop k) y = x :: update xs k y;
+
   data [noElim] Imp : Vect Set n -> Vect Set n' -> Set -> Set where
        Let  : A -> Imp (A :: gam) (B :: gam') T -> Imp gam gam' T
-     | (:=) : (i:Fin n) -> B -> Imp gam (update i B gam) ()
-     | Read : (i:Fin n) -> Imp gam gam (vlookup i gam)
+     | (:=) : (p:HasType gam i A) -> B -> Imp gam (update gam p B) ()
+     | Read : HasType gam i A -> Imp gam gam A
      | While : Imp gam gam Bool -> Imp gam gam () -> Imp gam gam ()
      | Return : A -> Imp gam gam A
      | Bind : Imp gam gam' A -> (A -> Imp gam' gam'' T) -> 
               Imp gam gam''  T;
 
-
   data Env : Vect Set n -> Set where
      Empty : Env VNil
    | Extend : a -> Env gam -> Env (a :: gam);
 
-  envLookup : (i:Fin n) -> Env gam -> vlookup i gam;
-  envLookup fO     (Extend x xs) = x;
-  envLookup (fS k) (Extend x xs) = envLookup k xs;
+  envLookup : HasType gam i A -> Env gam -> A;
+  envLookup stop    (Extend x xs) = x;
+  envLookup (pop k) (Extend x xs) = envLookup k xs;
 
-  envUpdate : (i:Fin n) -> (val:a) -> 
-              Env gam -> Env (update i a gam);
-  envUpdate fO     val (Extend x xs) = Extend val xs;
-  envUpdate (fS k) val (Extend x xs) = Extend x (envUpdate k val xs);
+  envUpdate : (p:HasType gam i A) -> (val:B) -> 
+              Env gam -> Env (update gam p B);
+  envUpdate stop    val (Extend x xs) = Extend val xs;
+  envUpdate (pop k) val (Extend x xs) = Extend x (envUpdate k val xs);
 
   envTail : Env (a :: gam) -> Env gam;
   envTail (Extend x xs) = xs;
@@ -49,7 +51,6 @@ using (gam : Vect Set n, gam' : Vect Set n, gam'' : Vect Set n) {
   interp env (Bind v k) = let venv = interp env v in
                           interp (snd venv) (k (fst venv));
 
-
   run : Imp VNil VNil t -> t;
   run prog = fst (interp Empty prog);
 
@@ -60,6 +61,8 @@ dsl imp {
    return = Return
    variable = id
    let = Let
+   index_first = stop
+   index_next = pop
 }
 
 syntax IMP x = #( {gam:Vect Set n} -> Imp gam gam x );
