@@ -23,6 +23,14 @@ readLine (OpenH h) = ior (fread h);
 eof : FILE Reading -> Reader Bool;
 eof (OpenH h) = ior (feof h);
 
+{-
+readH : RES (FILE Reading -> IO ());
+readH = res (\h => While (do { end <- Use eof h;
+                               return (not end); })
+                         (do { str <- Use readLine h;
+                               Lift (putStrLn str); }));
+-}
+
 testprog : String -> RES ();
 testprog filename 
     = res do { let h = open filename Reading;
@@ -32,7 +40,7 @@ testprog filename
                                    return (not end); })
                              (do { str <- Use readLine h;
                                    Lift (putStrLn str); });
-                       Update close h; 
+                       Update close h;
                        Lift (putStrLn "DONE");
                      }); 
              };

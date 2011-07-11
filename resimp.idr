@@ -29,52 +29,38 @@ getCreator (MkCreator x) = x;
 ioc : IO a -> Creator a;
 ioc = MkCreator;
 
-using (i: Fin n, gam : Vect Set n, gam' : Vect Set n, gam'' : Vect Set n) {
+using (i: Fin n, gam : Vect Ty n, gam' : Vect Ty n, gam'' : Vect Ty n) {
 
-  infixl 5 :. ;
+  infixr 5 :-> ;
 
-  data HasType : Vect Set n -> Fin n -> Set -> Set where
+  data Ty = R Set
+          | Val Set
+          | Choice Set Set
+          | (:->) Set Ty;
+
+  interpTy : Ty -> Set;
+  interpTy (R t) = IO t;
+  interpTy (Val t) = t;
+  interpTy (Choice x y) = Either x y;
+  interpTy (a :-> b) = a -> (interpTy b);
+
+  data HasType : Vect Ty n -> Fin n -> Ty -> Set where
        stop : HasType (a :: gam) fO a
      | pop  : HasType gam i b -> HasType (a :: gam) (fS i) b;
 
-  update : (gam : Vect Set n) -> HasType gam i b -> Set -> Vect Set n;
-  update (x :: xs) stop    y = y :: xs;
-  update (x :: xs) (pop k) y = x :: update xs k y;
-
-  data [noElim] Res : Vect Set n -> Vect Set n' -> Set -> Set where
-
-{-- Resource creation and usage. 'Let' creates a resource - the type
-    at the end means that the resource must have been consumed by the time
-    it goes out of scope, where "consumed" simply means that it has been
-    replaced with a value of type '()'. --}
-
-       Let    : Creator A -> Res (A :: gam) (() :: gam') T -> Res gam gam' T
-     | Update : (A -> Updater B) -> (p:HasType gam i A) -> 
-                Res gam (update gam p B) ()
-     | Use    : (A -> Reader B) -> HasType gam i A -> 
-                Res gam gam B
-
-{-- Control structures --}
-
-     | Lift   : |(action:IO a) -> Res gam gam a
-     | Check  : (p:HasType gam i (Either A B)) -> 
-                (failure:Res (update gam p A) (update gam p C) T) ->
-                (success:Res (update gam p B) (update gam p C) T) ->
-                Res gam (update gam p C) T
-     | While  : Res gam gam Bool -> Res gam gam () -> Res gam gam ()
-     | Return : A -> Res gam gam A
-     | Bind   : Res gam gam'  A -> (A -> Res gam' gam'' T) -> 
-                Res gam gam'' T;
-
-  data Env : Vect Set n -> Set where
+  data Env : Vect Ty n -> Set where
        Empty : Env VNil
-     | Extend : a -> Env gam -> Env (a :: gam);
+     | Extend : interpTy a -> Env gam -> Env (a :: gam);
   
-  envLookup : HasType gam i A -> Env gam -> A;
+  envLookup : HasType gam i a -> Env gam -> interpTy a;
   envLookup stop    (Extend x xs) = x;
   envLookup (pop k) (Extend x xs) = envLookup k xs;
 
-  envUpdate : (p:HasType gam i a) -> (val:b) -> 
+  update : (gam : Vect Ty n) -> HasType gam i b -> Ty -> Vect Ty n;
+  update (x :: xs) stop    y = y :: xs;
+  update (x :: xs) (pop k) y = x :: update xs k y;
+
+  envUpdate : (p:HasType gam i a) -> (val:interpTy b) -> 
               Env gam -> Env (update gam p b);
   envUpdate stop    val (Extend x xs) = Extend val xs;
   envUpdate (pop k) val (Extend x xs) = Extend x (envUpdate k val xs);
@@ -82,42 +68,75 @@ using (i: Fin n, gam : Vect Set n, gam' : Vect Set n, gam'' : Vect Set n) {
   envTail : Env (a :: gam) -> Env gam;
   envTail (Extend x xs) = xs;
 
-  interp : Env gam -> Res gam gam' t -> IO (t & Env gam');
-  interp env (Let val scope) 
-     = do { x <- getCreator val;
-            tenv <- interp (Extend x env) scope;
-            return (fst tenv, envTail (snd tenv));
-          };
-  interp env (Update method x) 
-     = do { x' <- getUpdater (method (envLookup x env));
-            return (II, envUpdate x x' env);
-          };
-  interp env (Use method x) 
-     = do { x' <- getReader (method (envLookup x env));
-            return (x', env); 
-          };
-  interp env (Lift io) = do { v <- io;
-                              return (v, env); };
-  interp env (Check x left right) with envLookup x env {
-      | Left a  = interp (envUpdate x a env) left;
-      | Right b = interp (envUpdate x b env) right;
-  }
-  interp env (While test body) 
-     = do { tenv <- interp env test;
-            if (not (fst tenv)) 
-               then (return (II, snd tenv))
-               else (do { benv <- interp (snd tenv) body;
-                          interp (snd benv) (While test body); });
-          };
-  interp env (Return v) = return (v, env);
-  interp env (Bind v k) 
-     = do { venv <- interp env v;
-            interp (snd venv) (k (fst venv)); 
-          };
+  data [noElim] Res : Vect Ty n -> Vect Ty n -> Ty -> Set where
 
-  run : Res VNil VNil t -> IO t;
-  run prog = do { v <- interp Empty prog;
-                  return (fst v); };
+{-- Resource creation and usage. 'Let' creates a resource - the type
+    at the end means that the resource must have been consumed by the time
+    it goes out of scope, where "consumed" simply means that it has been
+    replaced with a value of type '()'. --}
+
+       Let    : Creator (interpTy a) -> 
+                Res (a :: gam) (Val () :: gam') t -> Res gam gam' t
+     | App    : Res gam gam (a :-> t) -> HasType gam i (Val a) -> Res gam gam t
+     | Update : (a -> Updater b) -> (p:HasType gam i (Val a)) -> 
+                Res gam (update gam p (Val b)) (Val ())
+     | Use    : (a -> Reader b) -> HasType gam i (Val a) -> 
+                Res gam gam (Val b)
+
+{-- Control structures --}
+
+     | Lift'  : IO a -> Res gam gam (Val a)
+     | Check  : (p:HasType gam i (Choice (interpTy a) (interpTy b))) -> 
+                (failure:Res (update gam p a) (update gam p c) T) ->
+                (success:Res (update gam p b) (update gam p c) T) ->
+                Res gam (update gam p c) T
+     | While  : Res gam gam (Val Bool) -> 
+                Res gam gam (Val ()) -> Res gam gam (Val ())
+     | Return : a -> Res gam gam (Val a)
+     | Bind   : Res gam gam'  a -> (interpTy a -> Res gam' gam'' t) -> 
+                Res gam gam'' t;
+
+  syntax Lift x = Lift' (lazy x); -- workaround for laziness not working on cons
+
+  iofst : IO (a & b) -> IO a;
+  iofst ip = do { p <- ip;
+                  return (fst p); };
+
+  interp : Env gam -> Res gam gam' t -> 
+           (Env gam' -> interpTy t -> IO u) -> IO u;
+  interp env (Let val scope) k
+     = do { x <- getCreator val;
+            interp (Extend x env) scope
+                   (\env', scope' => k (envTail env') scope');
+          };
+  interp env (Update method x) k
+     = do { x' <- getUpdater (method (envLookup x env));
+            k (envUpdate x x' env) II;
+          };
+  interp env (Use method x) k
+     = do { x' <- getReader (method (envLookup x env));
+            k env x';
+          };
+  interp env (Lift' io) k 
+     = do { v <- io;
+            k env v; };
+  interp env (Check x left right) k =
+     either (envLookup x env) 
+            (\a => interp (envUpdate x a env) left k)
+            (\b => interp (envUpdate x b env) right k);
+  interp env (While test body) k
+     = interp env test
+          (\env', result =>
+             if (not result) 
+               then (k env' II)
+               else (interp env' body 
+                       (\env'', body' => interp env'' (While test body) k)));
+  interp env (Return v) k = k env v;
+  interp env (Bind v f) k
+     = interp env v (\env', v' => interp env' (f v') k);
+
+  run : Res VNil VNil (Val t) -> IO t;
+  run prog = interp Empty prog (\env, res => return res);
 
 }
 
@@ -128,7 +147,8 @@ dsl res {
    let = Let
    index_first = stop
    index_next = pop
+   outer_lambda = Lam
 }
 
-syntax RES x = #( {gam:Vect Set n} -> Res gam gam x );
+syntax RES x = #( {gam:Vect Ty n} -> Res gam gam (Val x) );
 
