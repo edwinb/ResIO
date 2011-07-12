@@ -23,20 +23,28 @@ readLine (OpenH h) = ior (fread h);
 eof : FILE Reading -> Reader Bool;
 eof (OpenH h) = ior (feof h);
 
+syntax rclose h = Update close h;
+syntax rreadLine h = Use readLine h;
+syntax reof h = Use eof h;
+
+syntax rputStrLn s = Lift (putStrLn s);
+
 readH : RESFN (FILE Reading :-> R ());
-readH = res (\h => Fn (While (do { end <- Use eof h;
+readH = res (\h => Fn (While (do { end <- reof h;
                                    return (not end); })
-                             (do { str <- Use readLine h;
-                                   Lift (putStrLn str); })));
+                             (do { str <- rreadLine h;
+                                   rputStrLn str; }) ));
+
+syntax rreadH h = Call readH (ACons h ANil);
 
 testprog : String -> RES ();
 testprog filename 
     = res do { let h = open filename Reading;
                Check h
-                 (Lift (putStrLn "File open error"))
-                 (do { Call readH (ACons h ANil);
-                       Update close h; 
-                       Lift (putStrLn "DONE"); });
+                 (rputStrLn "File open error")
+                 (do { rreadH h;
+                       rclose h; 
+                       rputStrLn "DONE"; });
              };
 
 main : IO ();
