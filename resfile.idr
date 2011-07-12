@@ -23,26 +23,20 @@ readLine (OpenH h) = ior (fread h);
 eof : FILE Reading -> Reader Bool;
 eof (OpenH h) = ior (feof h);
 
-{-
-readH : RES (FILE Reading -> IO ());
-readH = res (\h => While (do { end <- Use eof h;
-                               return (not end); })
-                         (do { str <- Use readLine h;
-                               Lift (putStrLn str); }));
--}
+readH : RESFN (FILE Reading :-> R ());
+readH = res (\h => Fn (While (do { end <- Use eof h;
+                                   return (not end); })
+                             (do { str <- Use readLine h;
+                                   Lift (putStrLn str); })));
 
 testprog : String -> RES ();
 testprog filename 
     = res do { let h = open filename Reading;
                Check h
                  (Lift (putStrLn "File open error"))
-                 (do { While (do { end <- Use eof h;
-                                   return (not end); })
-                             (do { str <- Use readLine h;
-                                   Lift (putStrLn str); });
-                       Update close h;
-                       Lift (putStrLn "DONE");
-                     }); 
+                 (do { Call readH (ACons h ANil);
+                       Update close h; 
+                       Lift (putStrLn "DONE"); });
              };
 
 main : IO ();
