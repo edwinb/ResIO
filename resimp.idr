@@ -91,7 +91,7 @@ using (i: Fin n, gam : Vect Ty n, gam' : Vect Ty n, gam'' : Vect Ty n) {
     replaced with a value of type '()'. --}
 
        Let    : Creator (interpTy a) -> 
-                Res (a :: gam) (Val () :: gam') (R t) -> Res gam gam' (R t)
+                Res (a :: gam) (Val () :: gam) (R t) -> Res gam gam (R t)
      | Update : (a -> Updater b) -> (p:HasType gam i (Val a)) -> 
                 Res gam (update gam p (Val b)) (R ())
      | Use    : (a -> Reader b) -> HasType gam i (Val a) -> 
@@ -182,7 +182,13 @@ dsl res {
    let = Let
    index_first = stop
    index_next = pop
-   outer_lambda = Lam
+}
+
+dsl resfn {
+   lambda = Lam
+   variable = id
+   index_first = stop
+   index_next = pop
 }
 
 syntax RES x = #( {gam:Vect Ty n} -> Res gam gam (R x) );
