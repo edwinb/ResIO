@@ -51,7 +51,7 @@ using (i: Fin n, gam : Vect Ty n, gam' : Vect Ty n, gam'' : Vect Ty n) {
   data Env : Vect Ty n -> Set where
        Empty : Env VNil
      | Extend : interpTy a -> Env gam -> Env (a :: gam);
-  
+
   envLookup : HasType gam i a -> Env gam -> interpTy a;
   envLookup stop    (Extend x xs) = x;
   envLookup (pop k) (Extend x xs) = envLookup k xs;
@@ -81,8 +81,6 @@ using (i: Fin n, gam : Vect Ty n, gam' : Vect Ty n, gam'' : Vect Ty n) {
   applyArgs env f ANil         = f;
   applyArgs env f (ACons x xs) = applyArgs env (f (envLookup x env)) xs;
 
-  data ResFn : Vect Ty n -> Ty -> Set;
-
   data [noElim] Res : Vect Ty n -> Vect Ty n -> Ty -> Set where
 
 {-- Resource creation and usage. 'Let' creates a resource - the type
@@ -91,7 +89,7 @@ using (i: Fin n, gam : Vect Ty n, gam' : Vect Ty n, gam'' : Vect Ty n) {
     replaced with a value of type '()'. --}
 
        Let    : Creator (interpTy a) -> 
-                Res (a :: gam) (Val () :: gam) (R t) -> Res gam gam (R t)
+                Res (a :: gam) (Val () :: gam') (R t) -> Res gam gam' (R t)
      | Update : (a -> Updater b) -> (p:HasType gam i (Val a)) -> 
                 Res gam (update gam p (Val b)) (R ())
      | Use    : (a -> Reader b) -> HasType gam i (Val a) -> 
@@ -99,7 +97,6 @@ using (i: Fin n, gam : Vect Ty n, gam' : Vect Ty n, gam'' : Vect Ty n) {
 
 {-- Control structures --}
 
-     | Call   : ResFn gam (funTy as t) -> Args gam as -> Res gam gam t
      | Lift'  : IO a -> Res gam gam (R a)
      | Check  : (p:HasType gam i (Choice (interpTy a) (interpTy b))) -> 
                 (failure:Res (update gam p a) (update gam p c) T) ->
@@ -111,10 +108,6 @@ using (i: Fin n, gam : Vect Ty n, gam' : Vect Ty n, gam'' : Vect Ty n) {
      | Bind   : Res gam gam'  (R a) -> (a -> Res gam' gam'' (R t)) -> 
                 Res gam gam'' (R t);
 
-  data ResFn : Vect Ty n -> Ty -> Set where
-       Lam : ResFn (a :: gam) t -> ResFn gam (interpTy a :-> t)
-     | Fn  : Res gam gam (R t) -> ResFn gam (R t);
-
   syntax Lift x = Lift' (lazy x); -- workaround for laziness not working on cons
 
   iofst : IO (a & b) -> IO a;
@@ -123,10 +116,6 @@ using (i: Fin n, gam : Vect Ty n, gam' : Vect Ty n, gam'' : Vect Ty n) {
 
   interp : Env gam -> Res gam gam' t -> 
            (Env gam' -> interpTy t -> IO u) -> IO u;
-
-  interpFn : Env gam -> ResFn gam t -> interpTy t;
-  interpFn env (Lam sc) = \x => interpFn (Extend x env) sc;
-  interpFn env (Fn b)   = interp env b (\env, v => v);
 
   interp : Env gam -> Res gam gam' t -> 
            (Env gam' -> interpTy t -> IO u) -> IO u;
@@ -144,8 +133,6 @@ using (i: Fin n, gam : Vect Ty n, gam' : Vect Ty n, gam'' : Vect Ty n) {
             k env (return x');
           };
 
-  interp env (Call fn args) k
-     = k env (applyArgs env (interpFn env fn) args);
   interp env (Lift' io) k 
      = do { -- v <- io;
             k env io; };
@@ -184,13 +171,14 @@ dsl res {
    index_next = pop
 }
 
-dsl resfn {
-   lambda = Lam
-   variable = id
-   index_first = stop
-   index_next = pop
-}
-
 syntax RES x = #( {gam:Vect Ty n} -> Res gam gam (R x) );
-syntax RESFN x = #( {gam:Vect Ty n} -> ResFn gam x );
+
+infixr 5 :->, |-> ;
+
+syntax (:->) x y 
+   = #( {gam:Vect Ty n} -> HasType gam i (Val x) -> Res gam gam y) ;
+
+syntax (|->) x y 
+   = #( {gam:Vect Ty n} -> (p:HasType gam i (Val x)) -> 
+                           Res gam (update gam p y) (R ())) ;
 

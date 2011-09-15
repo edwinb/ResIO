@@ -29,22 +29,33 @@ syntax reof h = Use eof h;
 
 syntax rputStrLn s = Lift (putStrLn s);
 
-readH : String -> RESFN (FILE Reading :-> R ());
-readH intro = resfn (\h => Fn (res
-                            (While (do { end <- reof h;
-                                         return (not end); })
-                                   (do { str <- rreadLine h;
-                                         rputStrLn (intro ++ str); }) )));
+readH : String -> (FILE Reading :-> R ());
+readH intro h = res (While (do { end <- reof h;
+                                 return (not end); })
+                           (do { str <- rreadLine h;
+                                 rputStrLn (intro ++ str); }));
 
-syntax rreadH i h = Call (readH i) (ACons h ANil);
+readCloseH : String -> (FILE Reading |-> Val ());
+readCloseH intro h = res do { While (do { end <- reof h;
+                                          return (not end); })
+                                    (do { str <- rreadLine h;
+                                          rputStrLn (intro ++ str); });
+                              rclose h; };
+
+-- syntax rreadH i h = Call (readH i) (ACons h ANil);
 
 testprog : String -> RES ();
 testprog filename 
     = res do { let h = open filename Reading;
+               let h' = open filename Reading;
                Check h
                  (rputStrLn "File open error")
-                 (do { rreadH "Line: " h;
+                 (do { readH "Line: " h;
                        rclose h; 
+                       rputStrLn "DONE"; });
+               Check h'
+                 (rputStrLn "File open error")
+                 (do { readCloseH "Line: " h';
                        rputStrLn "DONE"; });
              };
 
